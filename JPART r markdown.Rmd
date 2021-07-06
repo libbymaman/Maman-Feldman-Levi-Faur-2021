@@ -1,0 +1,1470 @@
+---
+title: "JPART rmarkdown"
+author: "Libby Maman"
+date: "12/16/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+
+```
+Study 1: 
+1. The data collected in the first study has been cleaned and prepared, removing respondents that failed the alert test. 
+
+```{r preparing data study 1, message=FALSE, warning=FALSE, include=FALSE}
+###Clean workspace
+
+rm(list=ls())
+cat("\014")
+#load packages
+library("readxl")
+library(dplyr)
+library(knitr)
+library(kableExtra)
+library(compareGroups)
+library(psych)
+library(apaTables)
+library(MBESS)
+library(ggplot2)
+library(stats)
+library(pander)
+library(tidyr)
+library(webshot)
+library(stargazer)
+
+
+#load jews and arabs data - libby
+data.jews <- read_excel("C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/archive/data/Trust in Financial Regulation_March 17, 2020_05.14.xlsx")
+data.arabs <- read_excel("C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/archive/data/Trust in Financial Regulation - Arabs_March 17, 2020_05.13.xlsx")
+
+#delete first rows
+data.jews <- data.jews[-1,]
+data.arabs <- data.arabs[-1,]
+
+#insert variable for survey sample
+data.jews$surveySample <- "Jews"
+data.arabs$surveySample <- "Arabs"
+
+#merge data
+dataAll <- rbind(data.jews,data.arabs)
+
+#delete preview rows
+dataAll <- dataAll[!dataAll$DistributionChannel=="preview",]
+
+####Screen participants
+dataClean <- dataAll[dataAll$alert=="7.0",]
+
+#testing other but not 81
+test <- dataClean[!dataClean$alert_7_TEXT=="81",]
+test3 <- test[complete.cases(test[,1]),]
+test2 <- dataClean[is.na(dataClean$alert_7_TEXT)==TRUE,]
+
+#deleting irrelevant cases from alert
+dataClean <- dataClean[!dataClean$alert_7_TEXT=="הליכה",]
+dataClean <- dataClean[!dataClean$alert_7_TEXT=="טלויזיה",]
+dataClean <- dataClean[!dataClean$alert_7_TEXT=="לומד",]
+dataClean <- dataClean[!dataClean$alert_7_TEXT=="ללא",]
+dataClean <- dataClean[!dataClean$alert_7_TEXT=="TEST",]
+
+
+#removing other & empty in alert
+dataClean <- dataClean[!is.na(dataClean$alert_7_TEXT)==TRUE,]
+
+#how many failed alert
+nrow(dataAll) - nrow(dataClean)
+
+#count duplicates
+sum(duplicated(dataClean$i.user3))
+
+#removing duplicates
+dataClean <- dataClean[!duplicated(dataClean$i.user3), ]
+
+
+#change numeric values to numeric instead of character
+for (i in c(34:63,65:69)) {
+  dataClean[,i] <- as.numeric(unlist(dataClean[,i],use.names=FALSE))
+}
+dataClean <- as.data.frame(dataClean)
+
+
+#condition as factor
+dataClean$condition <- factor(dataClean$FL_8_DO, labels=c("No information (control)", "State regulation - high monitoring", "No regulation", "State regulation - low monitoring"))
+
+#Demographic as factors
+dataClean$sex <- factor(dataClean$sex, labels =c("Male","Female"))
+dataClean$age <- factor(dataClean$age, 
+                        labels = c("18to22","23to29","30to39","40to49",
+                                   "50to70","70+"))
+dataClean$education <- factor(dataClean$education, 
+                        labels = c("Elementary","Partial_Secondary",
+                                   "Full_Secondary","High_Edu",
+                                   "Partial_Academic","B.A.","M.A.+"))
+dataClean$identity <- factor(dataClean$identity,
+                              labels = c("Jewish","Christian",
+                                         "Arab","No_Religion",
+                                         "Muslim","Chrisitian_Arab","Other"))
+
+#add druze level
+dataClean$identity <- factor(dataClean$identity,
+                             levels = c(levels(dataClean$identity),"Druze"))
+
+#give druze level to whoever wrote druze in other
+dataClean$identity[grep("דרוזי",dataClean$identity_7_TEXT)]<-"Druze"
+
+dataClean$religious <- as.numeric(dataClean$religious)
+
+dataClean$party <- factor(dataClean$party,
+                             labels = c("AvodaGesher","ReshimaMeshutefet",
+                                        "DidntVote","Other","RatherNotAnswer",
+                                        "LikudCulanu","CacholLavan","IsraelBeitenu",
+                                        "Shas","Yamina","MachaneDemocrati",
+                                        "YahadutTora","OtzmaYehudit"))
+
+dataClean$income <- factor(dataClean$income, 
+                              labels = c("LessThan5000","5000to7500",
+                                         "7500to10500","10500to13000",
+                                         "MoreThan13000"))
+
+dataClean$`working place` <- factor(dataClean$`working place`,
+                                    labels = c("Private","Public","NGO","Unemployed",
+                                               "Student","Other"))
+
+
+dataClean$`finance media` <- factor(dataClean$`finance media`, 
+                                    labels = c("SeveralTimesADay","OnceADay",
+                                               "SeveralTimesAWeek","OnceAWeek",
+                                               "LessThanOnceAWeek","Never"))
+
+dataClean$`finance media` <- factor(dataClean$`finance media`,
+                                    levels=c("Never","LessThanOnceAWeek",
+                                             "OnceAWeek","SeveralTimesAWeek",
+                                             "OnceADay","SeveralTimesADay"))
+
+dataClean$corrupt <- as.numeric(dataClean$corrupt)
+dataClean$corrupt <- 6-dataClean$corrupt
+
+dataClean$satisfaction[dataClean$satisfaction==5] <- NA
+dataClean$satisfaction <- 5-dataClean$satisfaction
+
+#recode variables 
+#recode ideoligy_1
+dataClean$ideology_1_R <- 11-dataClean$ideology_1
+
+#recode ideoligy_4
+dataClean$ideology_4_R <- 11-dataClean$ideology_4
+
+#recode all variables of 1-5 into 5-1
+dataClean[,c("willingness",
+             "confidence",
+             "ben1",
+             "ben2",
+             "ben3",
+             "int2",
+             "int3",
+             "int4",
+             "cap1",
+             "cap2",
+             "cap3",
+             "trust_regulator",
+             "cap_reg1",
+             "cap_reg2",
+             "cap_re3",
+             "ben_reg1",
+             "ben_reg2",
+             "ben_reg3",
+             "int_reg1",
+             "int_reg2",
+             "int_reg3",
+             "trust in people_1",
+             "trust in people_2",
+             "trust in people_3",
+             "trust in people_4",
+             "trust in people_5",
+             "trust in people_6",
+             "satisfaction")] <- 6-dataClean[,c("willingness",
+                                                  "confidence",
+                                                  "ben1",
+                                                  "ben2",
+                                                  "ben3",
+                                                  "int2",
+                                                  "int3",
+                                                  "int4",
+                                                  "cap1",
+                                                  "cap2",
+                                                  "cap3",
+                                                  "trust_regulator",
+                                                  "cap_reg1",
+                                                  "cap_reg2",
+                                                  "cap_re3",
+                                                  "ben_reg1",
+                                                  "ben_reg2",
+                                                  "ben_reg3",
+                                                  "int_reg1",
+                                                  "int_reg2",
+                                                  "int_reg3",
+                                                  "trust in people_1",
+                                                  "trust in people_2",
+                                                  "trust in people_3",
+                                                  "trust in people_4",
+                                                  "trust in people_5",
+                                                  "trust in people_6",
+                                                  "satisfaction")]
+
+library(Hmisc)
+label(dataClean$sex) <- "Sex"
+label(dataClean$age) <-"Age"
+label(dataClean$education) <-"Highest education"
+label(dataClean$income) <-"Income level"
+label(dataClean$identity) <-"Identity/Ethnicity"
+label(dataClean$religious) <-"Religious"
+
+dataClean<- dplyr::rename(dataClean, working_place=`working place`)
+names(dataClean)
+```
+2. Measures were created (composite measures of several questionnaire items)
+
+```{r creating variables study 1, message=FALSE, warning=FALSE, include=FALSE}
+###create mean variables
+dataClean$trustMarket <- rowMeans(dataClean[,c("willingness",
+                                               "confidence",
+                                               "ben1",
+                                               "ben2",
+                                               "ben3",
+                                               "int1",
+                                               "int2",
+                                               "int3",
+                                               "int4",
+                                               "cap1",
+                                               "cap2",
+                                               "cap3")])
+
+dataClean$trustRegMean <- rowMeans(dataClean[,c("trust_regulator",
+                                                "cap_reg1",
+                                                "cap_reg2",
+                                                "cap_re3",
+                                                "ben_reg1",
+                                                "ben_reg2",
+                                                "ben_reg3",
+                                                "int_reg1",
+                                                "int_reg2",
+                                                "int_reg3")])
+
+dataClean$tendencyTrust <- rowMeans(dataClean[,c("trust in people_1",
+                                                       "trust in people_2",
+                                                       "trust in people_3",
+                                                       "trust in people_4",
+                                                       "trust in people_5",
+                                                       "trust in people_6",
+                                                       "ideology_1_R")])
+
+
+
+#####################################################################
+
+```
+3. Measures were tested running alphas
+
+```{r Confirmatory Factor Analysis study 1, message=FALSE, warning=FALSE, include=FALSE}
+library(psych)
+#take data of trust in market
+dataEFA.m <- dataClean[,c("willingness",
+                          "confidence",
+                          "ben1",
+                          "ben2",
+                          "ben3",
+                          "int1",
+                          "int2",
+                          "int3",
+                          "int4",
+                          "cap1",
+                          "cap2",
+                          "cap3")]
+
+#scree plot for EFA  - trust in market
+efaM <- fa.parallel(dataEFA.m, fm='pa', fa='fa')
+
+#eigen values for EFA - trust in market
+efaM$fa.values
+
+#proportion of variance explained by the factor
+fa(dataEFA.m,nfactors=1,rotate = "oblimin",fm="pa")
+
+#alphas  -trust in market
+psych::alpha(dataEFA.m)
+
+
+#take data of trust in regulator
+dataEFA.r <- dataClean[,c("trust_regulator",
+                          "cap_reg1",
+                          "cap_reg2",
+                          "cap_re3",
+                          "ben_reg1",
+                          "ben_reg2",
+                          "ben_reg3",
+                          "int_reg1",
+                          "int_reg2",
+                          "int_reg3")]
+
+#scree plot for EFA  - trust in regulator
+efaR <- fa.parallel(dataEFA.r, fm='pa', fa='fa')
+
+#eigen values for EFA  - trust in regulator
+efaR$fa.values
+
+#proportion of variance explained by the factor
+fa(dataEFA.r,nfactors=1,rotate = "oblimin",fm="pa")
+
+
+#alpha -trust in regulator
+psych::alpha(dataEFA.r)
+
+#take data of tendency to trust
+dataEFA.t <- data.frame(scale(dataClean[,c("trust in people_1",
+                          "trust in people_2",
+                          "trust in people_3",
+                          "trust in people_4",
+                          "trust in people_5",
+                          "trust in people_6",
+                          "ideology_1_R")]))
+
+
+#scree plot for EFA  - tendency to trust
+efaT <- fa.parallel(dataEFA.t, fm='pa', fa='fa')
+
+#eigen values for EFA - tendency to trust
+efaT$fa.values
+
+#proportion of variance explained by the factor
+fa(dataEFA.t,nfactors=1,rotate = "oblimin",fm="pa")
+
+#alpha - tendency to trust
+psych::alpha(dataEFA.t)
+```
+4. Checking for balance
+```{r descriptive statistics, echo=FALSE}
+res <- compareGroups(condition ~ sex+age+education+income+identity+religious+`working place`+corrupt+`finance media`+satisfaction+trustRegMean+tendencyTrust, data = dataClean, p.corrected = TRUE, chisq.test.perm=TRUE)
+
+restab <- createTable(res, type = 1, show.n = TRUE)
+export2html(restab, file="C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/Paper in English/restab.html")
+
+```
+5. plot means
+```{r Plotting group means study 1, echo=FALSE}
+
+#ordering the plot
+dataClean$condition <- factor(dataClean$condition,levels = c("No information (control)", "No regulation" , "State regulation - low monitoring" , "State regulation - high monitoring"))
+#plotting
+library(ggpubr)
+BP<- ggbarplot(dataClean, x='condition', y='trustMarket', add= "mean_se", fill = "grey", title = "Effect of treatment on trust in market", subtitle="Trust in market by group", xlab="Treatment group", ylab="Trust in market")
+
+BP+
+  font("title", size = 14, color = "black", face = "bold")+
+ font("subtitle", size = 10, color = "black")+
+  font("xlab", size = 12, color = "black", face = "bold")+
+ font("ylab", size = 12, color = "black", face = "bold")+
+  font("xy.text", size = 8, color = "gray", face = "bold")+ theme_classic2()
+
+BP
+
+BL<- ggline(dataClean, x='condition', y='trustMarket', add= "mean_se", fill = "grey", title = "Trust in market means in different treatment groups", xlab="Treatment group", ylab="Trust in market")
+BL+
+  font("title", size = 14, color = "black", face = "bold")+
+ font("subtitle", size = 10, color = "black")+
+  font("xlab", size = 12, color = "black", face = "bold")+
+ font("ylab", size = 12, color = "black", face = "bold")+
+  font("xy.text", size = 8, color = "gray", face = "bold")+ theme_classic2()
+
+#test for significance
+m <- lm(trustMarket ~ condition, data = dataClean)
+summary(m)
+
+#New visualization
+#ordering the plot
+dataClean$condition <- ordered(dataClean$condition,
+                         levels = c("No information (control)", "No regulation" , "State regulation - low monitoring" , "State regulation - high monitoring"))
+
+#change name
+levels(dataClean$condition) <- c("No information (control)", "No regulation", "State regulation with pledges" , "State regulation - C&C")
+
+
+#compute statistics
+library(dplyr)
+group_by(dataClean, condition) %>%
+  summarise(
+    count = n(),
+    mean = mean(trustMarket, na.rm = TRUE),
+    sd = sd(trustMarket, na.rm = TRUE)
+  )
+install.packages("ggpubr")
+library("ggpubr")
+ggboxplot(dataClean, x = "condition", y = "trustMarket", 
+          color = "condition",
+          ylab = "Trust in Market Entity", xlab = "Treatment")
+
+NV<-ggline(dataClean, x = "condition", y = "trustMarket", 
+       add = c("mean_se"), 
+       ylab = "Trust in Market Entity", xlab = "Treatment", title = "Effect of treatment on trust in market entity")
+
+# Add violin plots
+ggerrorplot(dataClean, x = "condition", y = "trustMarket", 
+            desc_stat = "mean_sd", color = "black",
+            add = "violin", add.params = list(color = "darkgray"), ylab = "Trust in Market Entity", xlab = "Treatment", title = "Effect of treatment on trust in market entity")
+# Specify the comparisons you want
+my_comparisons <- list( c("No information (control)", "No regulation"), c("No regulation", "Thin hybrid State regulation"), c("Thin hybrid State regulation", "C&C State regulation"), c("No information (control)", "Thin hybrid State regulation"), c("No regulation", "C&C State regulation"), c("No information (control)","C&C State regulation") )
+ggerrorplot(dataClean, x = "condition", y = "trustMarket", 
+            desc_stat = "mean_sd", color = "black",
+            add = "violin", add.params = list(color = "darkgray")
+            )+ 
+  stat_compare_means(comparisons = my_comparisons)+ # Add pairwise comparisons p-value
+  stat_compare_means(label.y = 8)                  # Add global p-value
+
+```
+
+
+6. Regression 
+
+```{r regression, echo=FALSE, results='asis'}
+#regression for differences between condition and control with added controls
+factor( dataClean$condition , ordered = FALSE )
+
+glm1C2 <- lm(trustMarket ~ condition+sex+satisfaction+working_place, data=dataClean)
+
+stargazer(glm1C2, title = "Table 2: Study 1 regression with controls", align=TRUE, header=FALSE, dep.var.labels = "Trust in market entity", type = 'text', report=('vc*p'))
+
+stargazer(glm1C2, title = "Table 2: Study 1 regression with controls", align=TRUE, header=FALSE, dep.var.labels = "Trust in market (B(SE))", covariate.labels = c("No regulation", "State regulation-low monitoring", "State regulation -high monitoring", "Gender:female", "Satisfaction from life", "Working place: public", "Working place: NGO","Working place: unemployed","Working place: student", "Working place: other"), type = 'html', out="C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/Paper in English/glm1C2.htm", report=('vc*p'))
+
+
+library (sjPlot)
+tab_model(glm1C2, emph.p=FALSE,digits = 3, show.se = TRUE, p.style= "numeric", file= "C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/Paper in English/glm1C2.htm")
+
+
+
+library(tidyverse)
+remotes::install_github("datalorax/equatiomatic")
+
+library(equatiomatic)
+
+extract_eq(glm1C2, use_coefs = TRUE,coef_digits = 2, wrap = TRUE)
+
+
+#regression with no controls
+glmm<-lm(trustMarket~condition, data=dataClean)
+#plot marginal effects
+library(sjPlot)
+plot_model(glmm, type="pred", terms="condition", title="Predicted values of trust in market")
+
+#Anova
+
+
+fit<- aov(trustMarket~condition, data=dataClean)
+summary(fit)
+
+#Tukey multiple pairwise-comparisons
+TukeyHSD(fit)
+
+#eta squared
+library(sjstats)
+eta_sq(fit)
+cohens_f(fit)
+```
+
+7. contrasts
+```{r planned contrasts, echo=FALSE}
+levels(dataClean$condition)
+noRegVSreg <- c(0,1,-2,1)
+
+##knowlwdge of type of regulator on trust in market
+softVSharsh <- c(0, 1, 0,-1)
+
+#data for contrasts
+dataCleanCon <- dataClean
+
+#put contrasts in data
+contrasts(dataCleanCon$condition) <- cbind(noRegVSreg,softVSharsh)
+contrasts(dataCleanCon$condition)
+
+#planned contrasts
+aov2 <- aov(trustMarket ~ condition, data=dataCleanCon)
+pander(aov2)
+aov3glm<-glm(trustMarket ~ condition, data=dataCleanCon)
+
+tab_model(aov3glm, emph.p=FALSE,digits = 3, show.se = TRUE, p.style= "numeric", file= "C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/Paper in English/aov3glm2.htm")
+
+stargazer(aov3glm, title = "Table 1: Study 1 regression results with contrasts", align=TRUE, header=FALSE, dep.var.labels = "Trust in market (B(SE))", covariate.labels = c("No regulation vs regulation (Hypothesis 1)", "Low monitoring state reg vs high monitoring state reg (Hypothesis 2)", "Condition"), type = 'html', out="C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/Paper in English/aov2.htm" )
+```
+8. interaction with trust in regulator
+```{r}
+glm5a <- glm(trustMarket ~condition*trustRegMean, data=dataClean)
+
+tab_model(glm5a, emph.p=FALSE,digits = 3, show.se = TRUE, p.style= "numeric", file= "C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/Paper in English/glm5a.htm")
+
+stargazer(glm5a, title = "Regression results", align=TRUE, header=FALSE, dep.var.labels = "Trust in the market(B(SE))", covariate.labels = c("No regulation", "State regulation-low monitoring", "State regulation -high monitoring", "Trust in the regulator", "No regulation*Trust in the regulator", "State regulation -low monitoring*Trust in the regulator", "State regulation -high monitoring*Trust in the regulator"), type = 'html', out="C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/Paper in English/glm5a.htm")
+```
+```{r}
+#demographic interaction
+glms <- glm(trustMarket ~condition*sex, data=dataClean)
+plot_model(glms, type = "int", show.p = TRUE, p.style="stars")
+library(stargazer)
+stargazer(glms, title = "Regression results", align=TRUE, header=FALSE, type = 'html', out="C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/Paper in English/glms.htm")
+
+glmI <- glm(trustMarket ~condition*income, data=dataClean)
+plot_model(glmI, type = "int", show.p = TRUE, p.style="stars", terms = "State regulation - low monitoring")
+library(stargazer)
+stargazer(glmI, title = "Regression results", align=TRUE, header=FALSE, type = 'html', out="C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/Paper in English/glmI.htm")
+
+
+fit <- lm(trustMarket ~condition*sex*income, data=dataClean)
+plot_model(fit, type = "int")
+
+fit1 <- lm(trustMarket ~tendencyTrust*trustRegMean*condition, data=dataClean)
+plot_model(fit1, type = "int")
+stargazer(fit1, title = "Regression results", align=TRUE, header=FALSE, type = 'html', out="C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/Paper in English/fit1.htm")
+
+fit2 <- lm(trustMarket ~trustRegMean*tendencyTrust*condition, data=dataClean)
+plot_model(fit2, type = "int")
+
+fit3 <- lm(trustMarket ~trustRegMean*satisfaction*condition, data=dataClean)
+plot_model(fit3, type = "int")
+
+fit4 <- lm(trustMarket ~condition*trustRegMean, data=dataClean)
+plot_model(fit4, type = "int")
+library(jtools)
+summ(fit4)
+#checking linearity assumption [https://cran.r-project.org/web/packages/interactions/vignettes/interactions.html]
+
+library(interactions)
+interact_plot(fit4, pred = trustRegMean, modx = condition,
+              linearity.check = TRUE, 
+              plot.points = TRUE)
+
+#visualizing coefficients
+install.packages("ggstance")
+library(ggstance)
+fit5<-lm(trustMarket ~condition+sex+satisfaction+dataClean$`working place`, data=dataClean)
+ss <- sim_slopes(fit5, pred = trustMarket, modx = condition)
+plot(ss)
+
+#regression with satisfaction
+fit6 <- lm(trustMarket ~condition+satisfaction, data=dataClean)
+plot_model(fit6, type = "pred")
+
+#interaction with working place
+fit7 <- lm(trustMarket ~condition * working_place, data=dataClean)
+cat_plot(fit7, pred = condition, modx = working_place, modx.values = c("Private", "Public"))
+
+#interaction with tedency trust
+fit8 <- lm(trustMarket ~condition * tendencyTrust, data=dataClean)
+interact_plot(fit8, pred = tendencyTrust, modx = condition, y.label = "Trust in market", x.label = "Generalized trust")
+
+#interaction with coruption
+fit9 <- lm(trustMarket ~condition * corrupt, data=dataClean)
+interact_plot(fit9, pred = corrupt, modx = condition, y.label = "Trust in market", x.label = "Is the governement corrupt?")
+
+
+
+
+#interaction with religious
+fit10 <- lm(trustMarket ~condition * religious, data=dataClean)
+interact_plot(fit10, pred = religious, modx = condition, y.label = "Trust in market", x.label = "Religiousity")
+
+#interaction with party
+fit11 <- lm(trustMarket ~condition * party, data=dataClean)
+
+cat_plot(fit11, pred = condition, modx = party, modx.values = c("YahadutTora", "Shas", "Yamina", "AvodaGesher", "ReshimaMeshutefet"))
+
+```
+
+9. plotting the interaction
+```{r}
+lm5a <- lm(trustMarket ~condition*trustRegMean, data=dataClean)
+
+anova(lm5a)
+
+library(interactions)
+P1<- interact_plot(lm5a, pred = trustRegMean, modx = condition, modx.values = c("No regulation", "No information (control)"), outcome.scale = "response",
+              interval = TRUE, int.width = 0.8, x.label = "Trust in Regulator", y.label = "Trust in Market Entity",
+              legend.main = "", vary.lty = FALSE, )
+P1
+
+P2<- interact_plot(lm5a, pred = trustRegMean, modx = condition, modx.values = c("State regulation - C&C", "No information (control)"), outcome.scale = "response",
+              interval = TRUE, int.width = 0.8, x.label = "Trust in Regulator", y.label = "Trust in Market Entity",
+              legend.main = "", vary.lty = FALSE, legend=T)
+P2
+
+
+P3<- interact_plot(lm5a, pred = trustRegMean, modx = condition, modx.values = c("State regulation with pledges", "No information (control)"), outcome.scale = "response",
+              interval = TRUE, int.width = 0.8, x.label = "Trust in Regulator", y.label = "Trust in Market Entity",
+              legend.main = "", vary.lty = FALSE, legend=T)
+
+library(RColorBrewer)
+library("ggsci")
+P1 +scale_color_tron()
+P2+scale_color_tron()
+P3
+```
+
+10. Demographics
+```{r}
+###hierarchical regression
+
+Hir1 <- lm(trustMarket ~ sex+ age +education+identity+party+religious, data=dataClean)
+summary(Hir1)
+
+Hir2 <- lm(trustMarket ~ sex+age+education+identity+party+religious+
+             `finance media`+income+satisfaction+corrupt+working_place, 
+           data=dataClean)
+summary(Hir2)
+
+
+Hir3 <- lm(trustMarket ~ tendencyTrust+trustRegMean+sex+age+education+identity+
+             party+religious+`finance media`+income+satisfaction+corrupt+
+             working_place, 
+           data=dataClean)
+summary(Hir3)
+
+Hir3a <- lm(trustMarket ~ tendencyTrust+sex+age+education+identity+party+religious+
+              `finance media`+income+satisfaction+corrupt+working_place, 
+            data=dataClean)
+summary(Hir3a)
+
+Hir3b <- lm(trustMarket ~ trustRegMean+tendencyTrust+sex+age+education+identity+party+religious+
+              `finance media`+income+satisfaction+corrupt+working_place, 
+            data=dataClean)
+summary(Hir3b)
+
+
+Hir4 <- lm(trustMarket ~ condition+tendencyTrust+trustRegMean+sex+age+
+             education+identity+
+             party+religious+`finance media`+income+satisfaction+corrupt+
+             working_place, 
+           data=dataClean)
+summary(Hir4)
+
+Hir4con <- lm(trustMarket ~ condition+tendencyTrust+trustRegMean+sex+age+
+             education+identity+
+             party+religious+`finance media`+income+satisfaction+corrupt+
+             `working place`, 
+           data=dataCleanCon)
+summary(Hir4con)
+
+Hir5con <- lm(trustMarket ~ condition*trustRegMean+condition*tendencyTrust+sex+age+
+                education+identity+
+                party+religious+`finance media`+income+satisfaction+corrupt+
+                `working place`, 
+              data=dataCleanCon)
+summary(Hir5con)
+
+Hir5con.2 <- lm(trustMarket ~ condition*trustRegMean+condition*tendencyTrust+
+                   sex+age+
+                   identity+
+                   party+religious+`finance media`+income+satisfaction+corrupt+
+                  education+
+                   `working place`, 
+                 data=dataCleanCon)
+summary(Hir5con.2)
+
+#library(car)
+Anova(Hir5con.2)
+
+library(sjPlot)
+plot_model(Hir5con.2, type="pred",terms=c("trustRegMean","condition"))
+
+tab_model(Hir1,Hir2, Hir3a, Hir3b, Hir4, Hir4con, Hir5con, file="C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/data/Hirsnew.doc")
+
+tab_model(Hir4, file="C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/data/Hir4.doc")#
+
+library(stargazer)
+stargazer(Hir1,Hir2, Hir3a, Hir3b, Hir4, title = "Hyrarchical regression results - Study 1", align=TRUE, header=FALSE, dep.var.labels = "Trust in Market Entity", type = 'html', out="C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/Paper in English/hir.htm")
+```
+
+Interactions
+```{r}
+#*sex
+glms <- glm(trustMarket~condition*sex, data=dataClean)
+stargazer(glms, title = "Regression results - Study 1", align=TRUE, header=FALSE, dep.var.labels = "Trust in Market Entity", type = 'html', out="C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/Paper in English/glms.htm")
+
+glmi <- glm(trustMarket~condition*identity, data=dataClean)
+stargazer(glmi, title = "Regression results - Study 1", align=TRUE, header=FALSE, dep.var.labels = "Trust in Market Entity", type = 'html', out="C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/Paper in English/glmi.htm")
+
+plot_model(glmi, type = "int")
+
+#*religiousity
+glmr <- glm(trustMarket~condition*religious, data=dataClean)
+stargazer(glmr, title = "Regression results - Study 1", align=TRUE, header=FALSE, dep.var.labels = "Trust in Market Entity", type = 'html', out="C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/Paper in English/glmr.htm")
+
+library(ggplot2)
+library(interactions)
+fit9 <- lm(trustinRegulatee ~condition * corrupt, data=datafinal)
+interact_plot(glmr, pred = religious, modx = condition, y.label = "Trust in market", x.label = "Religiosity")
+
+#Income
+glmin <- glm(trustMarket~condition*income, data=dataClean)
+stargazer(glmin, title = "Regression results - Study 1", align=TRUE, header=FALSE, dep.var.labels = "Trust in Market Entity", type = 'html', out="C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/Paper in English/glmin.htm")
+
+plot_model(glmin, type = "int")
+
+#Education
+glmed <- glm(trustMarket~condition*education, data=dataClean)
+stargazer(glmed, title = "Regression results - Study 1", align=TRUE, header=FALSE, dep.var.labels = "Trust in Market Entity", type = 'html', out="C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/Paper in English/glmed.htm")
+
+plot_model(glmin, type = "int")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+SECOND STUDY
+
+1. data preparation and creation of variables
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+rm(list=ls())
+cat("\014")
+```
+```{r prepare data, include=FALSE}
+
+#load packages 
+library("readxl")
+library(rlang)
+library(ggpubr)
+library(compareGroups)
+library(ggplot2)
+library(car)
+library(apaTables)
+library(MBESS)
+library(sjPlot)
+library(sjmisc)
+library(sjlabelled)
+library(psych)
+library(stargazer)
+library(data.table)
+library(plyr)
+library(dplyr)
+library(lmerTest)
+library(lme4)
+library(tidyverse)
+library(rstatix)
+library(pander)
+
+#load jews and arabs data - libby
+data.jews <- read_excel("C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/archive/second wave/Wave+2+-+trust+and+regulation+-+Jewish_September+2,+2020_08.43.xlsx")
+data.arabs <- read_excel("C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/archive/second wave/Wave+2+-+trust+and+regulation+-+Arabs_September+2,+2020_08.41.xlsx")
+
+
+########################CLEANING DATA##############################################
+#delete first rows
+data.jews <- data.jews[-1,]
+data.arabs <- data.arabs[-1,]
+
+#insert variable for survey sample
+data.jews$surveySample <- "Jews"
+data.arabs$surveySample <- "Arabs"
+
+#merge data
+dataAll <- rbind(data.jews,data.arabs)
+
+#delete preview rows
+dataAll <- dataAll[!dataAll$DistributionChannel=="preview",]
+
+####Screen participants
+#library(dplyr)
+#dataAll <- dataAll %>% mutate(alert = replace(alert, alert == "7"))
+
+#failed alert
+dataClean <- dataAll[dataAll$alert=="7",]
+
+#testing other but not 81
+#test <- dataClean[!dataClean$alert_7_TEXT=="81",]
+#test3 <- test[complete.cases(test[,1]),]
+#test2 <- dataClean[is.na(dataClean$alert_7_TEXT)==TRUE,]
+
+#deleting irrelevant cases from alert
+dataClean <- dataClean[!dataClean$alert_7_TEXT=="אנני יכול לבצע שום דבר ממה שרשום פה.
+",]
+dataClean <- dataClean[!dataClean$alert_7_TEXT=="הליכה
+",]
+dataClean <- dataClean[!dataClean$alert_7_TEXT=="	
+הליכת ספורט",]
+dataClean <- dataClean[!dataClean$alert_7_TEXT=="טלפון",]
+dataClean <- dataClean[!dataClean$alert_7_TEXT=="	
+לא יודע",]
+dataClean <- dataClean[!dataClean$alert_7_TEXT=="מה שבלי",]
+dataClean <- dataClean[!dataClean$alert_7_TEXT=="רואה טלויזיה
+",]
+dataClean <- dataClean[!dataClean$alert_7_TEXT=="רואה סרט",]
+dataClean <- dataClean[!dataClean$alert_7_TEXT=="שיחות עם אנשים
+",]
+dataClean <- dataClean[!dataClean$alert_7_TEXT=="؟",]
+
+
+
+#removing other & empty in alert
+dataClean <- dataClean[!is.na(dataClean$alert_7_TEXT)==TRUE,]
+
+#how many failed alert
+nrow(dataAll) - nrow(dataClean)
+
+#count duplicates
+sum(duplicated(dataClean$i.user3))
+
+#removing duplicates
+dataClean <- dataClean[!duplicated(dataClean$i.user3), ]
+
+#to excel
+#library(writexl)
+#write_xlsx(dataClean, "C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/second wave/dataClean.xlsx")
+
+#change numeric values to numeric instead of character
+dataClean <- as.data.frame(dataClean)
+
+#condition (FL_8_DO) as factor
+dataClean$FL_8_DO <- as.factor(dataClean$FL_8_DO)
+
+#Demographic as factors
+
+dataClean$sex <- factor(dataClean$sex, labels =c("Male","Female"))
+dataClean$age <- factor(dataClean$age, 
+                        labels = c("18to22","23to29","30to39","40to49",
+                                   "50to70","70plus"))
+dataClean$education <- factor(dataClean$education, 
+                              labels = c("Elementary","Partial_Secondary",
+                                         "Full_Secondary","High_Edu",
+                                         "Partial_Academic","B.A.","M.A.+"))
+dataClean$income <- factor(dataClean$income, 
+                           labels = c("LessThan5000","5000to7500",
+                                      "7500to10500","10500to13000",
+                                      "MoreThan13000"))
+
+dataClean$identity <- factor(dataClean$identity,
+                             labels = c("Jewish","Christian",
+                                        "Arab","No_Religion",
+                                        "Muslim","Chrisitian_Arab","Other"))
+
+#add druze level
+dataClean$identity <- factor(dataClean$identity,
+                             levels = c(levels(dataClean$identity),"Druze"))
+
+
+#give druze level to whoever wrote druze in other
+dataClean$identity[grep("דרוזית",dataClean$identity_7_TEXT)]<-"Druze"
+dataClean$identity[grep("דרוזייה",dataClean$identity_7_TEXT)]<-"Druze"
+dataClean$identity[grep("דרוזי",dataClean$identity_7_TEXT)]<-"Druze"
+
+dataClean$religious <- as.numeric(dataClean$religious)
+
+dataClean$`working place` <- factor(dataClean$`working place`,
+                                    labels = c("Private","Public","NGO","Unemployed",
+                                               "Student","Other"))
+
+dataClean <- dataClean %>% mutate(party = replace(party, party == "26", "1"))
+dataClean <- dataClean %>% mutate(party = replace(party, party == "27", "2"))
+
+dataClean <- dataClean %>% mutate(party = replace(party, party == "28", "3"))
+dataClean <- dataClean %>% mutate(party = replace(party, party == "29", "4"))
+dataClean <- dataClean %>% mutate(party = replace(party, party == "30", "5"))
+dataClean <- dataClean %>% mutate(party = replace(party, party == "31", "6"))
+dataClean <- dataClean %>% mutate(party = replace(party, party == "32", "7"))
+dataClean <- dataClean %>% mutate(party = replace(party, party == "33", "8"))
+dataClean <- dataClean %>% mutate(party = replace(party, party == "34", "9"))
+dataClean <- dataClean %>% mutate(party = replace(party, party == "35", "10"))
+dataClean <- dataClean %>% mutate(party = replace(party, party == "36", "11"))
+dataClean <- dataClean %>% mutate(party = replace(party, party == "37", "12"))
+dataClean <- dataClean %>% mutate(party = replace(party, party == "38", "13"))
+
+
+dataClean$party <- factor(dataClean$party,
+                          labels = c("AvodaGesher","LikudCulanu","CacholLavan","IsraelBeitenu", 
+                                     "Shas","Yamina","MachaneDemocrati",
+                                     "YahadutTora","OtzmaYehudit", "ReshimaMeshutefet", 
+                                     "DidntVote","Other","RatherNotAnswer"
+                                      ))
+
+
+dataClean$`finance media` <- factor(dataClean$`finance media`, 
+                                    labels = c("SeveralTimesADay","OnceADay",
+                                               "SeveralTimesAWeek","OnceAWeek",
+                                               "LessThanOnceAWeek","Never"))
+
+dataClean$corrupt <- as.numeric(dataClean$corrupt)
+
+dataClean$satisfaction[dataClean$satisfaction==5] <- NA
+dataClean$satisfaction <- as.numeric(dataClean$satisfaction)
+dataClean$`relavance 2_1`<- as.numeric(dataClean$`relavance 2_1`)
+dataClean$`relavance 2_2`<- as.numeric(dataClean$`relavance 2_2`)
+dataClean$`relavance 1` <- factor(dataClean$`relavance 1`, labels =c("No","Yes"))
+
+
+#remove failed manupulation (comprehensive item)
+dataClean <- dataClean[dataClean$manupulation=="4",]
+
+
+#recode variables 
+#recode relevance2
+dataClean$relavance_2_1_R <- 6-dataClean$`relavance 2_1`
+dataClean$relavance_2_2_R <- 6-dataClean$`relavance 2_2`
+
+#renaming condition factor
+datafinal <- dataClean %>% dplyr::rename(condition = FL_8_DO)
+datafinal <- datafinal[!is.na(datafinal$condition)==TRUE,]
+datafinal$surveySample <- factor(datafinal$surveySample, 
+                                 labels = c("Arabs","Jews"
+                                 ))
+
+
+############################CREATING VARIABLES##############################
+###create mean variables
+datafinal$`measuring trust I_1` <- as.numeric(datafinal$`measuring trust I_1`)
+datafinal$`measuring trust I_2` <- as.numeric(datafinal$`measuring trust I_2`)
+datafinal$`measuring trust I_3` <- as.numeric(datafinal$`measuring trust I_3`)
+datafinal$`measuring trust I_4` <- as.numeric(datafinal$`measuring trust I_4`)
+
+datafinal$trustinRegulatee <- rowMeans(datafinal[,c("measuring trust I_1",  
+                                                    "measuring trust I_2",
+                                                    "measuring trust I_3",
+                                                    "measuring trust I_4")])
+
+datafinal$`measuring trust II_1` <- as.numeric(datafinal$`measuring trust II_1`)
+datafinal$`measuring trust II_2` <- as.numeric(datafinal$`measuring trust II_2`)
+datafinal$`measuring trust II_3` <- as.numeric(datafinal$`measuring trust II_3`)
+datafinal$`measuring trust II_4` <- as.numeric(datafinal$`measuring trust II_4`)
+
+datafinal$trustinRegulateeII <- rowMeans(datafinal[,c("measuring trust II_1",  
+                                                      "measuring trust II_2",
+                                                      "measuring trust II_3",
+                                                      "measuring trust II_4")])
+
+datafinal$relavance <- rowMeans(datafinal[,c("relavance 2_1",        
+                                             "relavance 2_2")])
+
+
+datafinal$`trust in people_1` <- as.numeric(datafinal$`trust in people_1`)
+datafinal$`trust in people_2` <- as.numeric(datafinal$`trust in people_2`)
+datafinal$`trust in people_3` <- as.numeric(datafinal$`trust in people_3`)
+datafinal$`trust in people_4` <- as.numeric(datafinal$`trust in people_4`)
+datafinal$`trust in people_5` <- as.numeric(datafinal$`trust in people_5`)
+datafinal$`trust in people_7` <- as.numeric(datafinal$`trust in people_7`)
+datafinal$`trust in people_8` <- as.numeric(datafinal$`trust in people_8`)
+datafinal$`trust in people_9` <- as.numeric(datafinal$`trust in people_9`)
+
+datafinal$tendencyTrust <- rowMeans(datafinal[,c("trust in people_1",
+                                                 "trust in people_2",
+                                                 "trust in people_3",
+                                                 "trust in people_4",
+                                                 "trust in people_5",
+                                                 "trust in people_7",
+                                                 "trust in people_8",
+                                                 "trust in people_9")])
+
+library(dplyr)
+datafinal<- 
+  dplyr::rename(datafinal, "working_place" = "working place")
+names(datafinal)
+```
+2. descriptive statistics and balance check
+```{r}
+mean(datafinal$trustinRegulatee, na.rm=TRUE)
+sd(datafinal$trustinRegulatee, na.rm=TRUE)
+mean(datafinal$trustinRegulateeII, na.rm=TRUE)
+sd(datafinal$trustinRegulateeII, na.rm=TRUE)
+
+des <- compareGroups(condition ~ sex+age+education+income+identity+religious+`working place`+corrupt+`finance media`+satisfaction+relavance+tendencyTrust, data = datafinal, p.corrected = TRUE, chisq.test.perm=TRUE, max.ylev = 7)
+
+destab <- createTable(des, type = 1, show.n = TRUE)
+export2html(destab, file="C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/Paper in English/destab.html")
+```
+3/ plotting the means 
+```{r}
+#First Measure
+levels(datafinal$condition) <- c("Pledges", "Internal intermediary", "External intermediary", "International intermediary", "Multiple self-reg tools", "Civil enforcement", "C&C-State regulation")
+
+#change name
+levels(datafinal$condition) <- c("Self Reg pledges", "Self Reg pledges + Internal intermediary", "Self Reg pledges + External intermediary", "Self Reg pledges + International intermediary", "Self Reg multiple tools", "Self Reg multiple tools+ enforcement", "State Reg - C&C")
+
+library(ggpubr)
+BP2<- ggbarplot(datafinal, x='condition', y='trustinRegulatee', add= "mean_se", fill = "grey", title = "Effect of treatment on trust in market Entity - first measure", subtitle="Trust in market entity by group", xlab="Treatment group", ylab="Trust in market entity", label = FALSE)
+
+BP2+
+  font("title", size = 14, color = "black", face = "bold")+
+ font("subtitle", size = 10, color = "black")+
+  font("xlab", size = 12, color = "black", face = "bold")+
+ font("ylab", size = 12, color = "black", face = "bold")+
+  font("xy.text", size = 8, color = "gray", face = "bold")+theme_classic2()
+
+#second measure
+levels(datafinal$condition) <- c("State Reg (1)", "State Reg (2)", "State Reg (3)", "State Reg (4)", "State Reg (5)", "State Reg (6)", "Self Regulation (7)")
+
+library(ggpubr)
+BP3<- ggbarplot(datafinal, x='condition', y='trustinRegulateeII', add= "mean_se", fill = "grey", title = "Effect of treatment on trust in market - second measure", subtitle="Trust in market by group", xlab="Treatment group", ylab="Trust in market", label = FALSE)
+
+BP3+
+  font("title", size = 14, color = "black", face = "bold")+
+ font("subtitle", size = 10, color = "black")+
+  font("xlab", size = 12, color = "black", face = "bold")+
+ font("ylab", size = 12, color = "black", face = "bold")+
+  font("xy.text", size = 8, color = "gray", face = "bold")+ theme_classic2() +theme(text=element_text(family="TT Times New Roman")
+
+                                                                                    
+                                                                                    
+#plotting line
+BL2<- ggline(datafinal, x='condition', y='trustinRegulatee', add= "mean_se", fill = "grey", title = "Trust in market entity means in different treatment groups - first measure", xlab="Treatment group", ylab="Trust in market entity")
+
+BL3<- ggline(datafinal, x='condition', y='trustinRegulateeII', add= "mean_se", fill = "grey", title = "Trust in market means in different treatment groups - first measure", xlab="Treatment group", ylab="Trust in market")
+
+
+#New visualization
+
+as.factor(datafinal$condition)
+
+#compute statistics first measure
+install.packages("dplyr")
+library(dplyr)
+dplyr::group_by(datafinal, condition) %>%
+  summarise(
+    count = n(),
+    mean = mean(trustinRegulatee, na.rm = TRUE),
+    sd = sd(trustinRegulatee, na.rm = TRUE)
+    )
+
+install.packages("ggpubr")
+library("ggpubr")
+FM<-ggboxplot(datafinal, x = "condition", y = "trustinRegulatee", color = "condition", ylab = "Trust in Market Entity", xlab = "Treatment")
+
+NV<-ggline(datafinal, x = "condition", y = "trustinRegulatee", 
+       add = c("mean_se"), 
+       ylab = "Trust in Market Entity", xlab = "Treatment", title = "Effect of treatment on trust in market entity")
+NV+ ylim(1,5)
+# Add violin plots
+ggerrorplot(datafinal, x = "condition", y = "trustinRegulatee", 
+            desc_stat = "mean_sd", color = "black",
+            add = "violin", add.params = list(color = "darkgray"), ylab = "Trust in Market Entity", xlab = "Treatment", title = "Effect of treatment on trust in market entity - First Measure")
+# Specify the comparisons you want
+my_comparisons <- list( c("No information (control)", "No regulation"), c("No regulation", "Thin hybrid State regulation"), c("Thin hybrid State regulation", "C&C State regulation"), c("No information (control)", "Thin hybrid State regulation"), c("No regulation", "C&C State regulation"), c("No information (control)","C&C State regulation") )
+ggerrorplot(dataClean, x = "condition", y = "trustMarket", 
+            desc_stat = "mean_sd", color = "black",
+            add = "violin", add.params = list(color = "darkgray")
+            )+ 
+  stat_compare_means(comparisons = my_comparisons)+ # Add pairwise comparisons p-value
+  stat_compare_means(label.y = 8)                  # Add global p-value
+
+
+#second measure
+#compute statistics first measure
+install.packages("dplyr")
+library(dplyr)
+dplyr::group_by(datafinal, condition) %>%
+  summarise(
+    count = n(),
+    mean = mean(trustinRegulateeII, na.rm = TRUE),
+    sd = sd(trustinRegulateeII, na.rm = TRUE)
+    )
+
+install.packages("ggpubr")
+library("ggpubr")
+FM<-ggboxplot(datafinal, x = "condition", y = "trustinRegulateeII", color = "condition", ylab = "Trust in Market Entity", xlab = "Treatment")
+
+NVII<-ggline(datafinal, x = "condition", y = "trustinRegulateeII", 
+       add = c("mean_se"), 
+       ylab = "Trust in Market Entity", xlab = "Treatment", title = "Effect of treatment on trust in market entity")
+NV+ ylim(1,5)
+
+# Add violin plots
+ggerrorplot(datafinal, x = "condition", y = "trustinRegulateeII", 
+            desc_stat = "mean_sd", color = "black",
+            add = "violin", add.params = list(color = "darkgray"), ylab = "Trust in Market Entity", xlab = "Treatment", title = "Effect of treatment on trust in market entity - Second Measure")
+
+```
+4. running alphas on measures
+```{r}
+#take data of trust in regulated organization I
+dataEFA.m <- datafinal[,c("measuring trust I_1",  
+                          "measuring trust I_2",
+                          "measuring trust I_3",
+                          "measuring trust I_4")]
+
+#scree plot for EFA - trust in regulated organization
+dataEFA.m <- as.data.frame(apply(dataEFA.m, 2, as.numeric))
+
+efaM <- fa.parallel(dataEFA.m, fm='pa', fa='fa')
+
+#eigen values for EFA trust in regulated organization
+efaM$fa.values
+#proportion of variance explained by the factor
+fa(dataEFA.m,nfactors=1,rotate = "oblimin",fm="pa")
+
+#alphas  -trust in regulated organization
+alpha(dataEFA.m)
+
+#take data of trust in regulated organization II
+
+dataEFA.II <- datafinal[,c("measuring trust II_1",  
+                          "measuring trust II_2",
+                          "measuring trust II_3",
+                          "measuring trust II_4")]
+
+#scree plot for EFA - trust in regulated organization II
+dataEFA.II <- as.data.frame(apply(dataEFA.II, 2, as.numeric))
+
+efaII <- fa.parallel(dataEFA.II, fm='pa', fa='fa')
+
+#eigen values for EFA trust in regulated organization
+efaII$fa.values
+#proportion of variance explained by the factor
+fa(dataEFA.II,nfactors=1,rotate = "oblimin",fm="pa")
+
+#alphas  -trust in regulated organization II
+alpha(dataEFA.II)
+
+
+#take data of 'relavance'
+dataEFA.r <- datafinal[,c("relavance 2_1",        
+                          "relavance 2_2")]
+dataEFA.r <- as.data.frame(apply(dataEFA.r, 2, as.numeric))
+
+#scree plot for EFA - 'relavance'
+efaR <- fa.parallel(dataEFA.r, fm='pa', fa='fa')
+
+#eigen values for EFA - 'relavance'
+efaR$fa.values
+
+#proportion of variance explained by the factor
+fa(dataEFA.r,nfactors=1,rotate = "oblimin",fm="pa")
+
+#alphas
+alpha(dataEFA.r)
+alpha(dataEFA.r, check.keys=TRUE)
+
+#take data of 'relavance'with three items
+#dataEFA.r <- datafinal[,c("relavance 1",
+                          "relavance 2_1",        
+                          "relavance 2_2")]
+#dataEFA.r$`relavance 1`<- as.numeric(dataEFA.r$`relavance 1`)
+#dataEFA.r <- as.data.frame(apply(dataEFA.r, 2, as.numeric))
+
+#scree plot for EFA - 'relavance'
+#efaR <- fa.parallel(dataEFA.r, fm='pa', fa='fa')
+
+#eigen values for EFA - 'relavance'
+#efaR$fa.values
+
+#proportion of variance explained by the factor
+#fa(dataEFA.r,nfactors=1,rotate = "oblimin",fm="pa")
+
+#alphas
+#alpha(dataEFA.r)
+#alpha(dataEFA.r, check.keys=TRUE)
+
+##tendency to trust
+dataEFA.t <- datafinal[,c("trust in people_1",
+                            "trust in people_2",
+                            "trust in people_3",
+                            "trust in people_4",
+                            "trust in people_5",
+                            "trust in people_7",
+                            "trust in people_8",
+                            "trust in people_9")]
+dataEFA.t <- as.data.frame(apply(dataEFA.t, 2, as.numeric))
+
+#scree plot for EFA - all items - tendency to trust
+efaT <- fa.parallel(dataEFA.t, fm='pa', fa='fa')
+
+fa(dataEFA.t,nfactors=1,rotate = "oblimin",fm="pa")
+
+#eigen values for EFA - all items - tendency to trust
+efaT$fa.values
+
+#alphas
+alpha(dataEFA.t)
+```
+5. planned contrasts
+```{r}
+##planned contrats first measure
+##contrast 1 - state regulation vs self-regulation
+SelfregvsStatereg <- c(1,1,1,1,1,1,-6)
+
+##contrast 2- self-regulation with enforcement vs self-regulation without enforcement 
+nonenforcVSenforc <- c(1,1,1,1,1,-5,0)
+
+##contrast 3- self-regulation with mutiple tools vs self-regulation with two tools 
+twotoolsVSmultipletools <- c(0,1,1,1,-3,0,0)
+
+##contrast 4- self-regulation with statement and an additional tool vs self-regulation with only statement 
+pledgesVSpledgesandintern <- c(3,-1,-1,-1,0,0,0)
+
+#data for contrasts
+datafinalcon <- datafinal
+
+#put contrasts in data
+contrasts(datafinalcon$condition) <- cbind(SelfregvsStatereg,nonenforcVSenforc, twotoolsVSmultipletools, pledgesVSpledgesandintern)
+
+#test planned contrasts
+aov1 <- aov(trustinRegulatee ~ condition, data=datafinal)
+pander(aov1)
+aov2 <- lm(trustinRegulatee ~ condition, data=datafinalcon)
+pander(aov2)
+
+tab_model(aov2, emph.p=FALSE,digits = 3, show.se = TRUE, p.style= "numeric", file= "C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/Paper in English/aov2.htm")
+
+stargazer(aov2, title = "Regression results with planned contrasts", align=TRUE, header=FALSE, font.size = "small", no.space = TRUE,  dep.var.labels= "Trust in the market - first measure (B(SE))", covariate.labels = c("State regulation vs self regulation (Hypothesis 1)", "Enforcment vs no enforcment (Hypothesis 2)", "Multiple tools vs two tools (Hypothesis 3a)", "Two tools vs only statement (Hypothesis 3b)", "State regulation vs self regulation (Hypothesis 1)", "Condition", "Condition"), type = 'html', out="C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/Paper in English/aov2.htm")
+
+stargazer(aov2, title = "Regression results with planned contrasts", align=TRUE, header=FALSE, font.size = "small", no.space = TRUE,  dep.var.labels= "Trust in the market - first measure (B(SE))", type = 'text')
+
+
+##planned contrats second measure
+##contrast II- self-regulation vs state regulation
+selfregVSstatereg <- c(1,1,1,1,1,1,-6)
+
+#data for contrasts
+datafinalconII <- datafinal
+
+#put contrasts in data
+contrasts(datafinalconII$condition) <- cbind(selfregVSstatereg)
+contrasts(datafinalconII$condition) 
+
+#planned contrasts
+aovII <- glm(trustinRegulateeII ~ condition, data=datafinalconII)
+
+stargazer(aov2, aovII, title = "Regression results with planned contrasts", align=TRUE, header=FALSE, font.size = "small", no.space = TRUE,  dep.var.labels= c("Stage 1", "Stage 2"), dep.var.caption = "Trust in Market B(SE)", type='latex', covariate.labels = c("State regulation vs self regulation (Hypothesis 1)", "Enforcment vs no enforcment (Hypothesis 2)", "Multiple tools vs two tools (Hypothesis 3a)", "Two tools vs only statement (Hypothesis 3b)", "State regulation vs self regulation (Hypothesis 1)", "Condition", "Condition"), style = 'default')
+
+pander(aov2)
+
+```
+
+6. regression including repeated measures
+```{r}
+#ordering the groups and plotting with right order
+datafinal$condition<- relevel(datafinal$condition, ref="group7")
+
+#between subjects regression first and second measure
+glm1 <- glm(trustinRegulatee ~ condition, data=datafinal)
+
+tab_model(glm1, emph.p=FALSE,digits = 3, show.se = TRUE, p.style= "numeric", file= "C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/Paper in English/glm1.htm")
+
+glmII <- glm(trustinRegulateeII ~ condition, data=datafinal)
+
+tab_model(glmII, emph.p=FALSE,digits = 3, show.se = TRUE, p.style= "numeric", file= "C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/Paper in English/glmII.htm")
+
+pander(glmII)
+stargazer(glm1, glmII, title = "Regression results", align=TRUE, header=FALSE, font.size = "small", no.space = TRUE,  dep.var.labels = c("First stage", "Second stage"),covariate.labels = c("Pledges (1)", "Pledge+Intermediary (2)", "Pledge+ExternalApproval(3)", "Pledge+Certification (4)", "All tools (5)", "Alltools+Enforcement(6)"), type = 'html', out="C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/Paper in English/glm1II.htm")
+
+stargazer(glm1, title = "Regression results", align=TRUE, header=FALSE, font.size = "small", no.space = TRUE,  dep.var.labels = "Trust in the market - first measure (B(SE))",covariate.labels = c("Pledges (1)", "Pledge+Intermediary (2)", "Pledge+ExternalApproval(3)", "Pledge+Certification (4)", "All tools (5)", "Alltools+Enforcement (6)"), type = 'html', out="C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/Paper in English/glm1.htm")
+
+stargazer(glmII, title = "Regression results", align=TRUE, header=FALSE, font.size = "small", no.space = TRUE,  dep.var.labels = "Trust in the market - second measure (B(SE))",covariate.labels = c("State regulation (1)", "State regulation (2)", "State regulation (3)", "State regulation (4)", "State regulation (5)", "State regulation (6)"), type = 'html', out="C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/Paper in English/glmII.htm")
+
+#plotting predictive
+
+library(sjPlot)
+plot_model(glm1, type="pred", terms="condition", title="Predicted values of trust in market - first measure")
+plot_model(glmII, type="pred", terms="condition", title="Predicted values of trust in market - second measure")
+
+library(rstanarm)
+
+library(modelbased)
+model<-stan_glm(trustinRegulatee~condition, data=datafinal)
+means<- estimate_means(model)
+means
+
+model1<-stan_glm(trustinRegulateeII~condition, data=datafinal)
+means1<- estimate_means(model1)
+means1
+means
+
+
+#within subject regression
+datafinallong<- melt.data.table(setDT(datafinal),
+                                variable.name="measure",
+                                measure.vars = c("trustinRegulatee",
+                                                 "trustinRegulateeII"),
+                                value.name= "Trust_in_Regulatee"
+)
+within<- lmer(Trust_in_Regulatee~measure+(1|ResponseId), data=datafinallong)
+withininteract<- lmer(Trust_in_Regulatee~measure*condition+(1|ResponseId), data=datafinallong)
+
+set_theme(base = theme_light())
+plot_model(withininteract, type="int", terms="condition", x.label = "Trust in Regulator", y.label = "Measure" )+geom_line()
+
+plot_model(withininteract, type="int", terms="condition", x.label = "Trust in Regulator", y.label = "Measure" )+geom_line()
+
+estimated_means<- get_means(withininteract, "measure*condition")
+within
+library(sjPlot)
+library(lme4)
+
+tab_model(withininteract)
+
+
+sjtab(datafinallong, )
+stargazer(withininteract, type = "text")
+
+#regression for differences between condition and control
+stargazer(glm1, glmII, type='text')
+
+#plotting
+library(ggplot2)
+library(psycho)
+library(lmerTest)
+library(modelbased)
+library(see)
+
+
+library(lattice)
+xyplot(Trust_in_Regulatee ~ measure| condition, data = datafinallong)
+# common for all graphics: time for the x axis
+# outcome for the y axis
+gg.base <- ggplot(datafinallong, aes(x = measure, y = Trust_in_Regulatee))
+## display the mean value per group
+# we specify here we average over treatment using the mean function
+gg.base + stat_summary(aes(group = condition, color = condition),
+geom = "line", fun.y = mean, size = 1)
+
+
+#Anova first measure
+
+
+fitI<- aov(trustinRegulatee~condition, data=datafinal)
+summary(fitI)
+
+#Tukey multiple pairwise-comparisons
+TukeyHSD(fitI)
+
+#eta squared
+library(sjstats)
+eta_sq(fitI)
+cohens_f(fitI)
+
+#Anova second measure
+fitII<- aov(trustinRegulateeII~condition, data=datafinal)
+summary(fitII)
+
+#Tukey multiple pairwise-comparisons
+TukeyHSD(fitII)
+
+#eta squared
+library(sjstats)
+eta_sq(fitII)
+cohens_f(fitII)
+
+```
+
+7. demographic interactions
+```{r}
+#first measure*sex
+glmd <- glm(trustinRegulatee~condition*sex, data=datafinal)
+library(stargazer)
+stargazer(glmd, title = "Regression results", align=TRUE, header=FALSE, type = 'html', out="C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/Paper in English/glmd1.htm")
+
+plot_model(glmd, type = "int")
+
+#first measure*identity
+glmi <- glm(trustinRegulatee~condition*identity, data=datafinal)
+library(stargazer)
+stargazer(glmi, title = "Regression results", align=TRUE, header=FALSE, type = 'html', out="C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/Paper in English/glmi.htm")
+
+plot_model(glmi, type = "int")
+
+#demographic interaction
+
+
+#regression with satisfaction
+fit6 <- lm(trustinRegulatee ~condition+satisfaction, data=datafinal)
+plot_model(fit6, type = "pred")
+
+library(jtools)
+summ(fit6)
+
+#interaction with working place
+fit7 <- lm(trustinRegulatee ~condition * working_place, data=datafinal)
+cat_plot(fit7, pred = condition, modx = working_place, modx.values = c("Private", "Public"))
+stargazer(fit7, title = "Regression results - Study 2", align=TRUE, header=FALSE, dep.var.labels = "Trust in Market Entity", type = 'html', out="C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/Paper in English/fit7.htm")
+
+datafinal$working_place <- relevel(datafinal$working_place, ref = "Other")
+
+#interaction with tedency trust
+fit8 <- lm(trustinRegulatee ~condition * tendencyTrust, data=datafinal)
+interact_plot(fit8, pred = tendencyTrust, modx = condition, y.label = "Trust in market", x.label = "Generalized trust")
+
+#interaction with coruption
+fit9 <- lm(trustinRegulatee ~condition * corrupt, data=datafinal)
+interact_plot(fit9, pred = corrupt, modx = condition, y.label = "Trust in market", x.label = "Is the governement corrupt?")
+
+#checking linearity assumption [https://cran.r-project.org/web/packages/interactions/vignettes/interactions.html]
+
+library(interactions)
+interact_plot(fit4, pred = trustRegMean, modx = condition,
+              linearity.check = TRUE, 
+              plot.points = TRUE)
+
+#visualizing coefficients
+install.packages("ggstance")
+library(ggstance)
+fit5<-lm(trustMarket ~condition+sex+satisfaction+dataClean$`working place`, data=dataClean)
+ss <- sim_slopes(fit5, pred = trustMarket, modx = condition)
+plot(ss)
+
+
+#*sex
+glms2 <- glm(trustinRegulatee~condition*sex, data=datafinal)
+stargazer(glms2, title = "Regression results - Study 2", align=TRUE, header=FALSE, dep.var.labels = "Trust in Market Entity", type = 'html', out="C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/Paper in English/glms2.htm")
+
+glmi2 <- glm(trustinRegulatee~condition*identity, data=datafinal)
+stargazer(glmi2, title = "Regression results - Study 1", align=TRUE, header=FALSE, dep.var.labels = "Trust in Market Entity", type = 'html', out="C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/Paper in English/glmi2.htm")
+
+plot_model(glms2, type = "int")
+
+#*religiousity
+glmr2 <- glm(trustinRegulatee~condition*religious, data=datafinal)
+stargazer(glmr2, title = "Regression results - Study 1", align=TRUE, header=FALSE, dep.var.labels = "Trust in Market Entity", type = 'html', out="C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/Paper in English/glmr2.htm")
+
+library(ggplot2)
+library(interactions)
+fit9 <- lm(trustinRegulatee ~condition * corrupt, data=datafinal)
+interact_plot(glmr2, pred = religious, modx = condition, y.label = "Trust in market", x.label = "Religiosity")
+
+###hierarchical regression
+
+Hir1_2 <- lm(trustinRegulatee ~ sex+ age +education+identity+party+religious, data=datafinal)
+summary(Hir1_2)
+
+Hir2_2 <- lm(trustinRegulatee ~ sex+age+education+identity+party+religious+
+             `finance media`+income+satisfaction+corrupt+working_place, 
+           data=datafinal)
+summary(Hir2_2)
+
+
+Hir3a_2 <- lm(trustinRegulatee ~ tendencyTrust+sex+age+education+identity+party+religious+
+              `finance media`+income+satisfaction+corrupt+working_place, 
+            data=datafinal)
+summary(Hir3a_2)
+
+Hir3b_2 <- lm(trustinRegulatee ~ relavance+tendencyTrust+sex+age+education+identity+party+religious+
+              `finance media`+income+satisfaction+corrupt+working_place, 
+            data=datafinal)
+summary(Hir3b_2)
+
+
+Hir4_2 <- lm(trustinRegulatee ~ condition+tendencyTrust+relavance+sex+age+
+             education+identity+
+             party+religious+`finance media`+income+satisfaction+corrupt+
+             working_place, 
+           data=datafinal)
+summary(Hir4_2)
+
+
+
+library(stargazer)
+stargazer(Hir1_2,Hir2_2, Hir3a_2, Hir3b_2, Hir4_2, title = "Hyrarchical regression results - Study 2", align=TRUE, header=FALSE, dep.var.labels = "Trust in Market Entity", type = 'html', out="C:/Users/libby/Dropbox/trust and regulation/Paper with Yuval/Paper in English/hir_2.htm")
+
+
+```
+
+
